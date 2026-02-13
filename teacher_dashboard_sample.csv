@@ -1,0 +1,15 @@
+StudentName,TotalMarks,InternalMarks,PreviousLeaves,Percentage,Grade,Status
+Arun,417,40,2,83.4,B,PASS
+Kiran,264,30,5,52.8,C,PASS
+Divya,460,48,1,92.0,A,PASS
+Rahul,153,18,10,30.6,D,FAIL
+Meena,350,35,3,70.0,B,PASS
+Vijay,268,25,4,53.6,C,FAIL
+Sneha,441,45,0,88.2,A,PASS
+Ravi,252,28,6,50.4,C,PASS
+Priya,174,20,8,34.8,D,FAIL
+Manoj,392,38,2,78.4,B,PASS
+Lakshmi,310,32,4,62.0,C,PASS
+Suresh,480,50,0,96.0,A,PASS
+Anitha,145,15,12,29.0,D,FAIL
+Karthik,360,34,3,72.0,B,PASS
