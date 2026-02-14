@@ -1,19 +1,20 @@
+# ================== IMPORT PACKAGES ==================
 import streamlit as st
 import numpy as np
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
 from fpdf import FPDF
 from datetime import datetime
+import plotly.express as px
 
-# ---------------- PAGE CONFIG ----------------
+# ================== PAGE CONFIG ==================
 st.set_page_config(
     page_title="ABC Public School",
     page_icon="🏫",
     layout="wide"
 )
 
-# ---------------- SCHOOL THEME ----------------
+# ================== SCHOOL THEME ==================
 st.markdown("""
 <style>
 .main {background-color: #f4f8fb;}
@@ -28,20 +29,23 @@ h1, h2, h3 {color: #0d47a1;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- HEADER ----------------
+# ================== HEADER ==================
 st.markdown("<h1 style='text-align:center;'>🏫 ABC PUBLIC SCHOOL</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='text-align:center;'>Academic Management System</h4>", unsafe_allow_html=True)
 
 academic_year = f"{datetime.now().year}-{datetime.now().year+1}"
 st.markdown(f"<p style='text-align:center;'><b>Academic Year:</b> {academic_year}</p>", unsafe_allow_html=True)
 
-# ---------------- SESSION ----------------
+# ================== SESSION INIT ==================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
+if "role" not in st.session_state:
+    st.session_state.role = None
 
-# ---------------- LOGIN ----------------
+# ================== LOGIN FUNCTION ==================
 def login():
     st.subheader("🔐 Login Portal")
+
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     role = st.selectbox("Login As", ["Admin", "Teacher"])
@@ -50,6 +54,7 @@ def login():
         if role == "Admin" and username == "admin" and password == "admin123":
             st.session_state.logged_in = True
             st.session_state.role = "Admin"
+            st.session_state.admin_nav = "Student View"  # 🔥 Force default
             st.rerun()
 
         elif role == "Teacher" and username == "teacher" and password == "teacher123":
@@ -60,7 +65,7 @@ def login():
         else:
             st.error("Invalid Credentials")
 
-# ---------------- REPORT CARD ----------------
+# ================== REPORT CARD ==================
 def generate_report_card(name, subjects, marks, total, percentage, grade, status):
     pdf = FPDF()
     pdf.add_page()
@@ -87,31 +92,54 @@ def generate_report_card(name, subjects, marks, total, percentage, grade, status
     pdf.output(file_name)
     return file_name
 
-# ---------------- MAIN ----------------
+# ================== MAIN ==================
 if not st.session_state.logged_in:
     login()
 
 else:
     st.sidebar.success(f"Logged in as {st.session_state.role}")
 
+    # 🔥 Proper logout reset
     if st.sidebar.button("Logout"):
-        st.session_state.logged_in = False
+        st.session_state.clear()
         st.rerun()
 
-    # 🔐 ROLE-BASED ACCESS
+    # ================= ROLE CONTROL =================
+    # ================= ROLE CONTROL =================
     if st.session_state.role == "Admin":
-        page = st.sidebar.selectbox("Navigation", ["Student View", "Teacher Dashboard"])
-    else:
-        page = "Teacher Dashboard"
 
-    # ================= STUDENT VIEW (ADMIN ONLY) =================
+    # Force default page on first login
+        if "page" not in st.session_state:
+              st.session_state.page = "Student View"
+
+              st.sidebar.markdown("### Navigation")
+
+        if st.sidebar.button("🎓 Student View"):
+              st.session_state.page = "Student View"
+
+        
+    elif st.session_state.role == "Teacher":
+        st.session_state.page = "Teacher Dashboard"
+
+    else:
+        st.stop()
+
+    page = st.session_state.page
+
+
+    # ================= STUDENT VIEW =================
     if page == "Student View":
 
         st.subheader("🎓 Student Evaluation Portal")
 
-        model = joblib.load("model/grade_model.pkl")
-        scaler = joblib.load("model/scaler.pkl")
-        encoder = joblib.load("model/label_encoder.pkl")
+        try:
+            model = joblib.load("model/grade_model.pkl")
+            scaler = joblib.load("model/scaler.pkl")
+            encoder = joblib.load("model/label_encoder.pkl")
+            model_loaded = True
+        except:
+            model_loaded = False
+            st.warning("⚠ AI Model not found. Prediction disabled.")
 
         student_name = st.text_input("Student Name")
         num_subjects = st.number_input("Number of Subjects", min_value=1)
@@ -126,128 +154,110 @@ else:
             marks.append(mark)
 
         if len(marks) > 0:
-            col1, col2, col3 = st.columns([1,2,1])
-            with col2:
-                fig, ax = plt.subplots(figsize=(6,4))
-                ax.bar(subjects, marks, color="#1976d2")
-                st.pyplot(fig)
+            chart_df = pd.DataFrame({"Subject": subjects, "Marks": marks})
+            fig = px.bar(chart_df, x="Subject", y="Marks",
+                         color="Marks", color_continuous_scale="Blues",
+                         title="📊 Subject-wise Performance")
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
 
         total_marks = sum(marks)
         max_marks = num_subjects * 100
-        percentage = (total_marks / max_marks) * 100
+        percentage = (total_marks / max_marks) * 100 if max_marks else 0
 
         internal_marks = st.number_input("Internal Marks", min_value=0.0)
-
         total_working_days = st.number_input("Total Working Days", min_value=1, value=200)
         leaves = st.number_input("Number of Leaves Taken", min_value=0)
 
         attendance_percentage = ((total_working_days - leaves) / total_working_days) * 100
         st.info(f"📅 Attendance Percentage: {attendance_percentage:.2f}%")
 
-        if st.button("Generate Result"):
+        if st.button("🔮 Predict Result"):
 
             fail_reasons = []
             suggestions = []
 
-            # Subject check
             for subject, mark in zip(subjects, marks):
                 if mark < 35:
                     fail_reasons.append(f"{subject} mark below 35")
                     suggestions.append(f"Increase {subject} mark above 35")
 
-            # Attendance rule
             if attendance_percentage < 75:
-                fail_reasons.append(f"Attendance below 75% ({attendance_percentage:.2f}%)")
+                fail_reasons.append("Attendance below 75%")
                 suggestions.append("Improve attendance above 75%")
 
-            # Internal marks
             if internal_marks < 10:
                 fail_reasons.append("Internal marks too low")
                 suggestions.append("Improve internal assessment")
 
-            # AI Prediction
-            features = np.array([[total_marks, internal_marks, leaves]])
-            scaled = scaler.transform(features)
-            prediction = model.predict(scaled)
-            grade = encoder.inverse_transform(prediction)[0]
+            grade = "N/A"
 
-            if grade == "D":
-                fail_reasons.append("Low academic performance predicted by AI")
-                suggestions.append("Improve total + internal marks")
+            if model_loaded:
+                features = np.array([[total_marks, internal_marks, leaves]])
+                scaled = scaler.transform(features)
+                prediction = model.predict(scaled)
+                grade = encoder.inverse_transform(prediction)[0]
+
+                if grade == "D":
+                    fail_reasons.append("Low academic performance predicted by AI")
+                    suggestions.append("Improve total + internal marks")
 
             status = "FAIL" if fail_reasons else "PASS"
 
-            st.success(f"Total Marks: {total_marks}")
-            st.success(f"Percentage: {percentage:.2f}%")
-            st.success(f"Grade: {grade}")
+            st.success(f"📊 Total Marks: {total_marks}")
+            st.success(f"📈 Percentage: {percentage:.2f}%")
+            st.success(f"🏅 Grade: {grade}")
 
             if status == "FAIL":
                 st.error("❌ FINAL STATUS: FAIL")
-
-                st.markdown("### 📌 Why You Failed:")
                 for r in fail_reasons:
                     st.warning(f"- {r}")
-
-                st.markdown("### 💡 What You Need To Pass:")
                 for s in suggestions:
                     st.info(f"- {s}")
-
             else:
                 st.success("✅ FINAL STATUS: PASS")
                 st.balloons()
 
-            if student_name:
-                file = generate_report_card(student_name, subjects, marks, total_marks, percentage, grade, status)
-                with open(file, "rb") as f:
-                    st.download_button("📑 Download Report Card", f, file_name=file)
-
     # ================= TEACHER DASHBOARD =================
     elif page == "Teacher Dashboard":
 
-        st.subheader("📊 Teacher Dashboard")
+        st.subheader("📊 Teacher Analytics Dashboard")
 
         uploaded_file = st.file_uploader("Upload Student CSV", type=["csv"])
 
         if uploaded_file:
             df = pd.read_csv(uploaded_file)
 
-            show_failed_only = st.checkbox("Show Only Failed Students")
+            if "Status" not in df.columns and "Grade" in df.columns:
+                df["Status"] = df["Grade"].apply(lambda x: "FAIL" if x == "D" else "PASS")
 
-            df["StatusIcon"] = df["Status"].apply(
-                lambda x: "❌ FAIL" if x == "FAIL" else "✅ PASS"
-            )
+            st.markdown("## 📌 Class Overview")
 
-            if show_failed_only:
-                df = df[df["Status"] == "FAIL"]
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("👨‍🎓 Total Students", len(df))
+            col2.metric("📈 Class Average", round(df.get("TotalMarks", pd.Series([0])).mean(), 2))
+            col3.metric("✅ Pass %", f"{round((df['Status']=='PASS').mean()*100,2) if 'Status' in df else 0}%")
+            col4.metric("❌ Fail Count", (df["Status"]=="FAIL").sum() if "Status" in df else 0)
 
-            def highlight_fail(row):
-                if row["Status"] == "FAIL":
-                    return ["background-color: #ffcccc"] * len(row)
-                return [""] * len(row)
+            st.divider()
 
-            styled_df = df.style.apply(highlight_fail, axis=1)
+            if "Grade" in df.columns:
+                col1, col2 = st.columns(2)
 
-            st.dataframe(styled_df, use_container_width=True)
+                grade_counts = df["Grade"].value_counts().reset_index()
+                grade_counts.columns = ["Grade", "Count"]
 
-            if len(df) > 0:
-                class_average = df["TotalMarks"].mean()
-                pass_percentage = (df["Status"] == "PASS").mean() * 100
+                fig1 = px.bar(grade_counts, x="Grade", y="Count", color="Grade")
+                fig1.update_layout(height=350)
+                col1.plotly_chart(fig1, use_container_width=True, config={"displayModeBar": False})
 
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Total Students", len(df))
-                col2.metric("Class Average", round(class_average, 2))
-                col3.metric("Pass %", f"{round(pass_percentage, 2)}%")
+                if "Status" in df.columns:
+                    status_counts = df["Status"].value_counts().reset_index()
+                    status_counts.columns = ["Status", "Count"]
 
-                st.markdown("### 🎖 Grade Distribution")
+                    fig2 = px.pie(status_counts, names="Status", values="Count", hole=0.5)
+                    fig2.update_layout(height=350)
+                    col2.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
-                grade_counts = df["Grade"].value_counts().sort_index()
-
-                col1, col2, col3 = st.columns([1,2,1])
-                with col2:
-                    fig, ax = plt.subplots(figsize=(6,4))
-                    ax.bar(
-                        grade_counts.index,
-                        grade_counts.values,
-                        color=["#4CAF50", "#2196F3", "#FF9800", "#F44336"]
-                    )
-                    st.pyplot(fig)
+            st.divider()
+            st.dataframe(df, use_container_width=True)
